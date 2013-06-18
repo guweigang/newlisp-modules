@@ -9,7 +9,8 @@
 ;; @version 3.4  - documentaion error for load path
 ;; @version 3.41  - library load path for Fedora Linux
 ;; @version 3.42  - library load path upgraded for OpenBSD 4.9
-;; @author Lutz Mueller 2003-2010, Gordon Fischer 2005, Jeff Ober 2007
+;; @version 3.43 - add multi-db instance support
+;; @author Lutz Mueller 2003-2010, Gordon Fischer 2005, Jeff Ober 2007, Roy Gu 2013
 ;;
 ;; This MySQL 5.x interface module has been tested on versions 5.0 and 5.1
 ;; of mysql from @link http://www.mysql.com www.mysql.com
@@ -76,12 +77,12 @@
 ;; @example
 ;; (module "mysql.lsp) ; load the module file
 ;;
-;; (MySQL:init)       ; initialize
-;; (MySQL:connect "192.168.1.10" "auser" "secret" "mydb") ; logon
-;; (MySQL:query "select ...;") ; SQL query
-;; (MySQL:query "insert ...;") ; SQL query
+;; (set 'link (MySQL:init))       ; initialize
+;; (MySQL:connect "192.168.1.10" "auser" "secret" "mydb" 3306 link) ; logon
+;; (set 'res (MySQL:query "select ...;" link)) ; SQL query
+;; (set 'insertid (MySQL:query "insert ...;" link)) ; SQL query
 ;;        ...
-;; (MySQL:close-db)
+;; (MySQL:close-db link)
 
 ;; The database server is listening on IP 192.168.1.10. The program
 ;; connects with username '"auser"' password '"secret"' to a database with 
@@ -129,17 +130,19 @@
 (set 'big-endian (= (pack ">ld" 1) (pack "ld" 1)))
 
 ;; @syntax (MySQL:init)
-;; @return 'true' on success, 'nil' on failure.
+;; @return mysql connection link id on success, 'nil' on failure.
 
 (define (init)
-  (let (MYSQL (mysql_init 0))
-    (if (= MYSQL 0) nil MYSQL)))
+  (let (dblink (mysql_init 0))
+    (if (= dblink 0) nil dblink)))
 
-;; @syntax (MySQL:connect <str-server> <str-userID> <str-password> <str-db>)
+;; @syntax (MySQL:connect <str-server> <str-userID> <str-password> <str-db> <int-port> <int-dblink>)
 ;; @param <str-server> The host name or IP address or <tt>0</tt> for localhost.
 ;; @param <str-userID> The user ID for authentication.
 ;; @param <str-password> The password for authentication.
 ;; @param <str-db> The name of the database to connect to.
+;; @param <int-port> The port of the database to connect to.
+;; @param <int-dblink> The connection link id of the database.
 ;; @return 'true' for success or 'nil' for failure.
 ;; Connects to a database on server and authenticates a user ID.
 ;; '(MySQL:init)' must have been called previously.
@@ -147,31 +150,33 @@
 (define (connect host user passw database (port 0) dblink)
   (not (= (mysql_real_connect dblink host user passw database port 0 0) 0)))
 
-;; @syntax (MySQL:query <str-sql>)
+;; @syntax (MySQL:query <str-sql> <int-dblink>)
 ;; @param <str-sql> A valid SQL query string.
+;; @param <int-dblink> The connection link id of the database.
 ;; @return For 'insert' queries rerturns the inserted ID else 'true' for success or 'nil' for failure.
 ;; Sends a SQL query string to the database server for evaluation.
 
-(define (MySQL:query sql dblink)
+(define (query sql dblink)
   (let (result (= (mysql_real_query dblink sql (+ 1 (length sql))) 0) res (mysql_store_result dblink))
     (if (= res 0) (set 'res nil))
     (if (and result (find "insert into" sql 1)) (inserted-id dblink) res)))
 
-;; @syntax (MySQL:num-rows)
+;; @syntax (MySQL:num-rows <int-mysql_res>)
+;; @param <int-mysql_res> The query result of database.
 ;; @return Number of rows from last query.
 
 (define (num-rows (mysql_res nil))
   (if mysql_res (mysql_num_rows mysql_res)))
 
-;; @syntax (MySQL:num-fields)
+;; @syntax (MySQL:num-fields <int-mysql_res>)
+;; @param <int-mysql_res> The query result of database.
 ;; @return Number of columns from last query.
 
 (define (num-fields (mysql_res nil))
   (if mysql_res (mysql_num_fields mysql_res)))
 
 
-; format the result based on the field type.
-;
+;; format the result based on the field type.
 
 (define (keep-type res_ptr field_addr column_num, data)
   (set 'type_ptr (mysql_fetch_field_direct res_ptr (int column_num)))
@@ -195,7 +200,8 @@
   )
 )
 
-;; @syntax (MySQL:fetch-row)
+;; @syntax (MySQL:fetch-row <int-mysql_res>)
+;; @param <int-mysql_res> The query result of database.
 ;; @return A list of field elements.
 ;; Fetches a row from a previous SQL 'MySQL:query'  'select' statement.
 ;; Subsequent calls fetch row by row from the result table until the
@@ -217,14 +223,16 @@
               (push (keep-type mysql_res field_addr field) row -1)))
     row))) ; not necessary starting v 9.9.5, because push returns the list
 
-;; @syntax (MySQL:fetch-all)
+;; @syntax (MySQL:fetch-all <int-mysql_res>)
+;; @param <int-mysql_res> The query result of database.
 ;; @return All rows/fields from the last query.
 ;; The whole result set from the query is returned at once as a list of row lists.
 
 (define (fetch-all mysql_res, (all '()))
   (dotimes (x (num-rows mysql_res)) (push (fetch-row mysql_res) all -1)))
 
-;; @syntax (MySQL:databases)
+;; @syntax (MySQL:databases <int-dblink>)
+;; @param <int-dblink> The connection link id of the database.
 ;; @return A list of databases.
 ;; Performs a 'show databases;' query.
 
@@ -232,7 +240,8 @@
   (let (res (query "show databases;" dblink))
   (fetch-all res)))
 
-;; @syntax (MySQL:tables)
+;; @syntax (MySQL:tables <int-dblink>)
+;; @param <int-dblink> The connection link id of the database.
 ;; @return A list of tables in the database.
 ;; Performs a 'show tables;' query.
 
@@ -241,8 +250,9 @@
   (fetch-all res)))
   
 
-;; @syntax (MySQL:fields <str-table>)
+;; @syntax (MySQL:fields <str-table> <int-dblink>)
 ;; @param <str-table> The name of the table.
+;; @param <int-dblink> The connection link id of the database.
 ;; @return A list of field description lists.
 ;; For each field name in the table a list of specifications
 ;; for that field is returned. The list starts with the name
@@ -253,7 +263,7 @@
   (let (res (query (append "show fields from " table ";") dblink))
     (fetch-all res)))
   
-;; @syntax (MySQL:data-seek <num-offset>)
+;; @syntax (MySQL:data-seek <num-offset> <int-mysql_res>)
 ;; @param <num-offset> The <tt>0</tt> based offset to position inside the data set.
 ;; @return Always 'true'. 
 ;; Positions in the result set at a zero based offset
@@ -269,7 +279,8 @@
   true
 )
 
-;; @syntax (MySQL:error)
+;; @syntax (MySQL:error <int-dblink>)
+;; @param <int-dblink> The connection link id of the database.
 ;; @return Text info about the last error which occured.
 
 (define (error dblink)

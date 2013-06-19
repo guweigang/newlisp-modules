@@ -10,7 +10,7 @@
 ;; @version 3.41  - library load path for Fedora Linux
 ;; @version 3.42  - library load path upgraded for OpenBSD 4.9
 ;; @version 3.43 - add multi-db instance support
-;; @author Lutz Mueller 2003-2010, Gordon Fischer 2005, Jeff Ober 2007, Roy Gu 2013
+;; @author Roy Gu 2013, Lutz Mueller 2003-2010, Gordon Fischer 2005, Jeff Ober 2007
 ;;
 ;; This MySQL 5.x interface module has been tested on versions 5.0 and 5.1
 ;; of mysql from @link http://www.mysql.com www.mysql.com
@@ -147,7 +147,7 @@
 ;; Connects to a database on server and authenticates a user ID.
 ;; '(MySQL:init)' must have been called previously.
 
-(define (connect host user passw database (port 0) dblink)
+(define (connect host user passw database port dblink)
   (not (= (mysql_real_connect dblink host user passw database port 0 0) 0)))
 
 ;; @syntax (MySQL:query <str-sql> <int-dblink>)
@@ -158,7 +158,7 @@
 
 (define (query sql dblink)
   (let (result (= (mysql_real_query dblink sql (+ 1 (length sql))) 0) res (mysql_store_result dblink))
-    (if (= res 0) (set 'res nil))
+    (if (= res 0) (set 'res true))
     (if (and result (find "insert into" sql 1)) (inserted-id dblink) res)))
 
 ;; @syntax (MySQL:num-rows <int-mysql_res>)
@@ -324,56 +324,56 @@
 ; test data base functions
 ;
 
-;; (define (test-mysql)
-;;   (MySQL:init)
-;;   (unless (MySQL:connect 0 "" 0 "test")
-;;     (println "Could not connect to MySQL")
-;; 	(exit))
+(define (test-mysql)
+  (set 'link (MySQL:init))
+  (unless (MySQL:connect "10.23.241.39" "root" "root" "test" 7702 link)
+    (println "Could not connect to MySQL")
+	(exit))
   
-;;   (println "databases:")
-;;   (MySQL:query "show databases;")
+  (println "databases:")
+  (set 'db-res (MySQL:query "show databases;" link))
 
-;;   (dotimes (x (MySQL:num-rows)) (println (MySQL:fetch-row)))
-;;   (println)
+  (dotimes (x (MySQL:num-rows db-res)) (println (MySQL:fetch-row db-res)))
+  (println)
   
-;;   (MySQL:query "create table fruits (name TEXT(2000), 
-;;                                      qty INT(3),
-;;                                      num INT(4) AUTO_INCREMENT UNIQUE);")
+  (MySQL:query "create table fruits (name TEXT(2000), 
+                                     qty INT(3),
+                                     num INT(4) AUTO_INCREMENT UNIQUE);" link)
   
-;;   (MySQL:query "insert into fruits values ('apples', 11, null);")
-;;   (println "inserted-id: " (MySQL:inserted-id))
-;;   (MySQL:query "insert into fruits values ('oranges', 22, null);")
-;;   (println "inserted-id: " (MySQL:inserted-id))
-;;   (MySQL:query "insert into fruits values ('bananas', 33, null);")
-;;   (println "inserted-id: " (MySQL:inserted-id))
+  (MySQL:query "insert into fruits values ('apples', 11, null);" link)
+  (println "inserted-id: " (MySQL:inserted-id link))
+  (MySQL:query "insert into fruits values ('oranges', 22, null);" link)
+  (println "inserted-id: " (MySQL:inserted-id link))
+  (MySQL:query "insert into fruits values ('bananas', 33, null);" link)
+  (println "inserted-id: " (MySQL:inserted-id link))
 
-;;   (println "inserted into fruits:")
-;;   (MySQL:query "select * from fruits;")
-;;   (println "\n" (MySQL:affected-rows) " affected rows in query select")
-;;   (dotimes (x (MySQL:num-rows)) (println (MySQL:fetch-row)))
+  (println "inserted into fruits:")
+  (set 'fruit-res (MySQL:query "select * from fruits;" link))
+  (println "\n" (MySQL:affected-rows link) " affected rows in query select")
+  (dotimes (x (MySQL:num-rows fruit-res)) (println (MySQL:fetch-row fruit-res)))
 
-;;   (println "no rows = " (MySQL:num-rows) " no fields = " (MySQL:num-fields))
-;;   (println "fields = " (MySQL:fields "fruits"))
-;;   (println)
+  (println "no rows = " (MySQL:num-rows fruit-res) " no fields = " (MySQL:num-fields fruit-res))
+  (println "fields = " (MySQL:fields "fruits" link))
+  (println)
   
-;;   (println "tables:")
-;;   (MySQL:query "show tables;")
-;;   (dotimes (x (MySQL:num-rows)) (println (MySQL:fetch-row)))
-;;   (println)
+  (println "tables:")
+  (set 'tbl-res (MySQL:query "show tables;" link))
+  (dotimes (x (MySQL:num-rows tbl-res)) (println (MySQL:fetch-row tbl-res)))
+  (println)
   
-;;   (MySQL:query "select * from fruits;")
-;;   (MySQL:data-seek 2)
+  (set 'fruit-res (MySQL:query "select * from fruits;" link))
+  (MySQL:data-seek 2 fruit-res)
 
-;;   (println "data-seek to offset 2:")
-;;   (println (MySQL:fetch-row))
-;;   (println)
+  (println "data-seek to offset 2:")
+  (println (MySQL:fetch-row fruit-res))
+  (println)
   
-;;   (println "fetch-all:")
-;;   (println (MySQL:query "select * from fruits;"))
-;;   (println (MySQL:fetch-all))   
+  (println "fetch-all:")
+  (set 'fruit-res (MySQL:query "select * from fruits;" link))
+  (println (MySQL:fetch-all fruit-res))
   
-;;   (MySQL:query "drop table fruits;")
-;;   (MySQL:close-db)
-;; )
+  (MySQL:query "drop table fruits;" link)
+  (MySQL:close-db link)
+)
 
 ; eof
